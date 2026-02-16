@@ -15,6 +15,11 @@ def main():
     is_color_detection_active = False
     color_id = "blue"
     obj_tracker = ObjectTracker()
+    color_ranges = {
+        "Blue": (np.array([100, 80, 50]), np.array([140, 255, 255])),
+        "Red": (np.array([0, 150, 100]), np.array([10, 255, 255])),
+        "Green": (np.array([40, 80, 50]), np.array([80, 255, 255]))
+    }
     
     try:
         while True:
@@ -27,29 +32,20 @@ def main():
             display_frame = frame.copy()
             if is_grayscale_active:
                 display_frame = apply_grayscale(frame)
+            
             elif is_blur_active:
                 display_frame = apply_blur_filter(frame)
-            elif is_color_detection_active:
-                bbox = detect_color(frame)
-                if bbox:
-                    #draw the bounding box  
-                    x, y, w, h = bbox
-                    cv2.rectangle(display_frame, (x,y), (x+w, y+h), (0,255,0), 2)
-
-                    #update Tracker and get movement data
-                    center, velocity = obj_tracker.update(bbox)
-                    cx, cy = center
-                    dx, dy = velocity
-                    #display data
-                    cv2.circle(display_frame, (cx, cy), 3, (0, 0, 255), -1)
-                    cv2.putText(display_frame, f"Velocity: {dx}, {dy}", (x, y - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-                else:
-                    #if tracker is lost reset memory
-                    obj_tracker.prev_center = None
-            show_frame("Camera Feed", display_frame)
             
+            elif is_color_detection_active:
+                detections = detect_color(frame, color_ranges)
+                for name, bbox in detections:
+                    x, y, w, h = bbox
+                    #draw rectangle
+                    cv2.rectangle(display_frame, (x,y), (x+w, y+h), (0, 255, 0), 2)
+                    #label each one
+                    cv2.putText(display_frame, name, (x, y-50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
+            show_frame("Camera Feed", display_frame)
             
 
             #Handle Key Inputs
