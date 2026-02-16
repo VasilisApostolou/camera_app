@@ -36,3 +36,34 @@ def detect_color(
                 detections.append((color_name, bbox))
 
     return detections
+
+def create_color_histogram(frame: np.ndarray) -> np.ndarray:
+    #create a black canvas to draw the graph
+    hist_width, hist_height = 512,400
+    canvas = np.zeros((hist_height,hist_width, 3), dtype=np.uint8) #creates black image
+
+    #define the colors we need to analyze
+    colors = ("b", "g", "r")
+
+    for i,col in enumerate(colors):
+        hist = cv2.calcHist([frame], [i], None, [256], [0,256])
+        ''' [frame] : image input
+            [i] : which color channel
+            [None] : no mask (use the full image)
+            [256] : number of bins
+            [0-256] : intensity range
+        '''
+
+        cv2.normalize(hist, hist, 0, hist_height, cv2.NORM_MINMAX) #minimize values to fit histogram
+        
+        hist = hist.flatten() #convert to 1D array for easier plotting
+        #draw the histogram lines
+        for x in range(1,256):
+            pt1 = ( (x-1)*2, hist_height - int(hist[x-1]) )
+            pt2 = ( x*2, hist_height - int(hist[x]) )
+
+            line_color = (255 if col == "b" else 0,
+                        255 if col == "g" else 0,
+                        255 if col == "r" else 0)
+            cv2.line(canvas, pt1, pt2, line_color, 2)
+    return canvas
