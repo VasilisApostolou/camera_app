@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 from src.camera import open_camera, get_frame, release_camera
 from src.utils import show_frame, get_key_pressed, get_screen_resolution
-from src.processors import apply_grayscale, apply_blur_filter, detect_color, create_color_histogram
+from src.processors import *
 from src.tracker import ObjectTracker
 
 def main():
@@ -27,7 +27,6 @@ def main():
         "Green": (np.array([40, 80, 50]), np.array([80, 255, 255]))
     }
 
-    # 1. WINDOW SETUP (Crucial for "Bigger" window)
     window_title = "Camera Feed"
     cv2.namedWindow(window_title, cv2.WINDOW_NORMAL)
 
@@ -46,8 +45,6 @@ def main():
     
     try:
         while True:
-            hist_window_title = "Color Histogram"
-            cv2.namedWindow(hist_window_title, cv2.WINDOW_NORMAL) # Ensure histogram window is resizable
             ret, frame = get_frame(cap)
             if not ret:
                 print("Failed to grab frame")
@@ -64,6 +61,9 @@ def main():
                     cv2.putText(display_frame, name, (bx, by - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             
+            if current_mode == "shapes":
+                detect_shapes(display_frame)
+            
             cv2.imshow(window_title, display_frame)
             
             # Initial resize and move
@@ -74,9 +74,11 @@ def main():
 
             # Histogram Handling
             if current_mode == "histogram":
+                hist_window_title = "Color Histogram"
                 hist_canvas = create_color_histogram(frame)
                 cv2.imshow(hist_window_title, hist_canvas)
                 if not histogram_window_open:
+                    cv2.namedWindow(hist_window_title, cv2.WINDOW_NORMAL)
                     cv2.resizeWindow(hist_window_title, 1200, 800)
                     # Position it to the right of the camera feed
                     hist_x = win_x + window_width + 20
@@ -97,7 +99,8 @@ def main():
                 ord('g'): "grayscale",
                 ord('b'): "blur",
                 ord('c'): "color",
-                ord('h'): "histogram"
+                ord('h'): "histogram",
+                ord('s'): "shapes"
             }
             
             if key_pressed in key_mode_mapping:
