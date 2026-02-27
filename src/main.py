@@ -7,6 +7,7 @@ from src.camera import open_camera, get_frame, release_camera
 from src.utils import show_frame, get_key_pressed, get_screen_resolution
 from src.processors import *
 from src.tracker import ObjectTracker
+from src.yolo_detector import YoloDetector
 
 def main():
     # Set camera resolution
@@ -14,17 +15,26 @@ def main():
     current_mode = "normal"
     histogram_window_open = False
     first_frame = True
+    yolo = YoloDetector() #initialize the yolo model
     
     processing_modes = {
         "normal" : lambda f: f,
         "grayscale": apply_grayscale,
         "blur": apply_blur_filter,
+        "yolo": lambda f: f, #yolo will be handled separately since it needs to draw on the frame
     }
     
     color_ranges = {
         "Blue": (np.array([100, 80, 50]), np.array([140, 255, 255])),
         "Red": (np.array([0, 150, 100]), np.array([10, 255, 255])),
         "Green": (np.array([40, 80, 50]), np.array([80, 255, 255]))
+    }
+
+    detection_color_map = {
+    0: (0, 255, 0),     # person - green
+    67: (255, 0, 0),    # cell phone - blue
+    2: (0, 0, 255),     # car - red
+    3: (255, 255, 0),   # motorcycle - cyan
     }
 
     window_title = "Camera Feed"
@@ -63,6 +73,20 @@ def main():
             
             if current_mode == "shapes":
                 detect_shapes(display_frame)
+
+            if current_mode == "yolo":
+                detections = yolo.detect(frame)
+                raw_bboxes = []
+                for detection in detections:
+                    x1, y1, x2, y2 = detection["bbox"]
+                    label = detection["label"]
+                    class_id = detection["class_id"]
+                    default_box_color = (0,255,255) #yellow
+
+                    box_color = detection_color_map.get(class_id, default_box_color)
+                cv2.rectangle(display_frame, (x1, y1), (x2, y2), box_color, 2)
+                cv2.putText(display_frame, label, (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2)
             
             cv2.imshow(window_title, display_frame)
             
@@ -88,6 +112,8 @@ def main():
             elif histogram_window_open:
                 cv2.destroyWindow("Color Histogram")
                 histogram_window_open = False   
+            
+
 
             # Key Handling
             key_pressed = get_key_pressed()
@@ -100,7 +126,8 @@ def main():
                 ord('b'): "blur",
                 ord('c'): "color",
                 ord('h'): "histogram",
-                ord('s'): "shapes"
+                ord('s'): "shapes",
+                ord('y'): "yolo"
             }
             
             if key_pressed in key_mode_mapping:

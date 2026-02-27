@@ -3,6 +3,7 @@ import numpy as np
 from typing import Optional, Tuple, List, Dict
 from matplotlib import pyplot as plt
 
+
 def apply_grayscale(frame: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -21,8 +22,9 @@ def detect_color(
         mask = cv2.inRange(hsv_frame, lower, upper)
         
         #clean the noise of the frame using morphological opening
-        mask = cv2.erode(mask, None, iterations=2) #shrinks white regions , removes dots
-        mask = cv2.dilate(mask, None, iterations=2) # expands white regions, restores main object size
+        kern = np.ones((3,3), np.uint8)
+        mask = cv2.erode(mask, kern, iterations=2) #shrinks white regions , removes dots
+        mask = cv2.dilate(mask, kern, iterations=2) # expands white regions, restores main object size
 
         #find outlines
         outlines, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -71,18 +73,20 @@ def create_color_histogram(frame: np.ndarray) -> np.ndarray:
 
 def detect_shapes(frame: np.ndarray) -> List[Tuple[str, np.ndarray]]:
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5,5), 0)
+    blurred = cv2.GaussianBlur(gray, (7,7), 0)
     # Adjusted Canny thresholds for better edge detection
-    edged = cv2.Canny(blurred, 30, 100)
+    edged = cv2.Canny(blurred, 50, 150)
 
-    contours, _ = cv2.findContours(edged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5,5))
+    closed = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
+    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     shape_results = []
     #process each contour to determine shape
     for contour in contours:
         area = cv2.contourArea(contour)
         print(f"Contour area: {area}")
-        if area < 500:  
+        if area < 5000:  
             continue
 
         hull = cv2.convexHull(contour)
