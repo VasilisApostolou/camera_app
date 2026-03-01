@@ -76,16 +76,34 @@ def main():
 
             if current_mode == "yolo":
                 detections = yolo.detect(frame)
-                raw_bboxes = []
+                raw_bboxes = [] #store bounding boxes in correct format that the tracker can handle
                 for detection in detections:
-                    x1, y1, x2, y2 = detection["bbox"]
+                    x1, y1, x2, y2 = detection["bbox"] #get coords
+                    box_width = x2 - x1
+                    box_height = y2 - y1
+                    raw_bboxes.append((x1, y1, box_width, box_height)) 
+
+                    #update the tracker and get ids
+                tracked_objects = ObjectTracker().update(raw_bboxes) #feed the tracker
+
+                #loop again to draw YOLO boxes and with their ids
+                for detection in detections:
+                    x1, y1, x2, y2 = detection["bbox"] #get coords
+                    cx,cy = (x1 + x2) // 2, (y1 + y2) // 2
                     label = detection["label"]
                     class_id = detection["class_id"]
                     default_box_color = (0,255,255) #yellow
-
                     box_color = detection_color_map.get(class_id, default_box_color)
+
+                obj_id = "Scanning..." #in case the tracker doesn't find a match
+                for tid ,tcenter in tracked_objects.items():
+                    if np.hypot(cx - tcenter[0], cy - tcenter[1]) < 5: 
+                        obj_id = f"ID {tid}"
+                        break
+
+                label_with_id = f"{label} {obj_id}"
                 cv2.rectangle(display_frame, (x1, y1), (x2, y2), box_color, 2)
-                cv2.putText(display_frame, label, (x1, y1 - 10),
+                cv2.putText(display_frame, label_with_id, (x1, y1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2)
             
             cv2.imshow(window_title, display_frame)
