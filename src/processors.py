@@ -5,20 +5,29 @@ from matplotlib import pyplot as plt
 
 
 def apply_grayscale(frame: np.ndarray) -> np.ndarray:
-    return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    #If we convert to grayscale image drops from 3 color channels to 1
+    #So we convert to gray then immediately back to BGR. Gray to human eye but with 3 channels.
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
+#gaussian blur
 def apply_blur_filter(frame: np.ndarray, kernel_size: int = 15) -> np.ndarray:
     return cv2.GaussianBlur(frame, (kernel_size, kernel_size), 0)
 
+
 def detect_color(
     frame: np.ndarray, 
+    #color_ranges = DICTIONARY
+    #KEY = str | VALUE = tuple of 2 np arrays (FIRST PART - INPUT)
+    #We return a list where each item has : 1.str(color name) 2.tuple of 4 ints (SECOND PART - OUTPUT)
     color_ranges: Dict[str, Tuple[np.ndarray, np.ndarray]]) -> List[Tuple[str, Tuple[int, int, int, int]]]:   
-    #convert BGR to HSV
+    #convert BGR to HSV to separate actual color(hue) from lighting(value)
     hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     detections = []
+    
     for color_name, (lower,upper) in color_ranges.items():
 
-        #create a mask : pixels in range -> white else -> black
+        #create a mask : pixels in range = white | else = black
         mask = cv2.inRange(hsv_frame, lower, upper)
         
         #clean the noise of the frame using morphological opening
@@ -111,8 +120,13 @@ def detect_shapes(frame: np.ndarray) -> List[Tuple[str, np.ndarray]]:
         cx = int(M["m10"] / M["m00"])
         cy = int(M["m01"] / M["m00"])
         
-        #detect shape type based on number of vertices
+        # Detect shape type based on number of vertices.
+        # shape_type is set to a default first so it is ALWAYS defined,
+        # even for unusual polygons (7, 8 … sides) that skip every branch.
         sides = len(approx)
+        peri = cv2.arcLength(contour, True)
+        circularity = 4 * np.pi * area / (peri * peri)
+
         if sides == 3:
             shape_type = "Triangle"
         elif sides == 4:
@@ -121,14 +135,12 @@ def detect_shapes(frame: np.ndarray) -> List[Tuple[str, np.ndarray]]:
             shape_type = "Pentagon"
         elif sides == 6:
             shape_type = "Hexagon"
-        
+        elif circularity > 0.8:
+            # High circularity → circle regardless of vertex count
+            shape_type = "Circle"
         else:
-            peri = cv2.arcLength(contour, True)
-            circularity = 4 * np.pi * area / (peri * peri) 
-            if circularity > 0.8:
-                shape_type = "Circle"
-            else:
-                shape_type = "."
+            # Catch-all: polygon with many sides that isn't round enough
+            shape_type = f"Poly-{sides}"
         cv2.putText(frame, shape_type, (cx - 40, cy),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
         shape_results.append((shape_type, approx))
