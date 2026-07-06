@@ -8,13 +8,14 @@ class KalmanTrack:
 
     def __init__(self, bbox):
         
-        #bbox: (x1, y1, x2, y2) from YOLO
+        #bbox: (x1, y1, x2, y2) from YOLO detector
         #Internally we work with [cx, cy, s, r,  ẋ, ẏ, ṡ]
         #[center_x, center_y, scale, aspect_ratio, velocity_x, velocity_y, velocity_scale]
         
         self.kf = KalmanFilter(dim_x=7, dim_z=4)
 
         # State transition matrix — constant velocity model
+        # Maps current position and velocity to next position
         self.kf.F = np.array([
             [1,0,0,0,1,0,0],
             [0,1,0,0,0,1,0],
@@ -37,7 +38,7 @@ class KalmanTrack:
         self.kf.R[2,2] *= 10.0
         self.kf.R[3,3] *= 10.0
 
-        # Initial uncertainty P — we have no idea about velocities at birth
+        # Initial uncertainty P — we have no idea about velocities at birth so big uncertainty
         self.kf.P[4,4] *= 1000.0
         self.kf.P[5,5] *= 1000.0
         self.kf.P[6,6] *= 1000.0
@@ -51,28 +52,27 @@ class KalmanTrack:
         # Seed the filter with the first detection
         self.kf.x[:4] = self._bbox_to_z(bbox)
 
-        # Track metadata
+        # Track history and metrics
         self.id = KalmanTrack.count
         KalmanTrack.count += 1
         self.hits = 1             # matched detections so far
         self.no_match_streak = 0  # consecutive frames with no match
         self.age = 0              # total frames alive
 
-    # ── coordinate helpers ──────────────────────
 
     def _bbox_to_z(self, bbox):
-        """(x1,y1,x2,y2) → column vector [[cx],[cy],[area],[aspect_ratio]]"""
+        # Converts (x1,y1,x2,y2) to column vector [[cx],[cy],[area],[aspect_ratio]]
         x1, y1, x2, y2 = bbox
         w = x2 - x1
         h = y2 - y1
         cx = x1 + w / 2.0
         cy = y1 + h / 2.0
-        s  = w * h           # area as scale
-        r  = w / float(h)    # aspect ratio (assumed constant)
+        s  = w * h           # scale = bounding box area
+        r  = w / float(h)    # aspect ratio 
         return np.array([[cx],[cy],[s],[r]], dtype=float)
 
     def _z_to_bbox(self, x=None):
-        """State vector → (x1,y1,x2,y2)"""
+        # Converts State vector to (x1,y1,x2,y2)
         if x is None:
             x = self.kf.x
         cx, cy, s, r = x[0,0], x[1,0], x[2,0], x[3,0]
@@ -83,13 +83,8 @@ class KalmanTrack:
             int(cx + w/2), int(cy + h/2)
         )
 
-    # ── core filter operations ───────────────────
-
     def predict(self):
-        """
-        Advance the filter one timestep.
-        Call ONCE per frame for every active track, before matching.
-        """
+        # Predict the next state of the track using the Kalman filter.
         # Prevent area going negative if the scale velocity is too large
         if self.kf.x[6,0] + self.kf.x[2,0] <= 0:
             self.kf.x[6,0] = 0.0
@@ -99,40 +94,33 @@ class KalmanTrack:
         return self._z_to_bbox()
 
     def update(self, bbox):
-        """Correct the filter with a matched detection."""
+        #Correct the filter with a matched detection.
         self.no_match_streak = 0
         self.hits += 1
         self.kf.update(self._bbox_to_z(bbox))
 
     def get_state(self):
-        """Return current best estimate as (x1,y1,x2,y2)."""
+        # Return current best estimate as (x1,y1,x2,y2).
         return self._z_to_bbox()
 
-
-# ─────────────────────────────────────────────
-#  SORT tracker — manages all KalmanTrack instances
-# ─────────────────────────────────────────────
+# SORT implementation
 class SORTTracker:
     def __init__(self, max_age=3, min_hits=2, iou_threshold=0.25):
-        """
-        max_age       : frames a track survives without a detection match before being killed
-        min_hits      : how many consecutive matches before we show the track (avoids ghost tracks)
-        iou_threshold : minimum IoU to accept a detection→track assignment
-        """
+        
+        #max_age       : frames a track survives without a detection match before being killed
+        #min_hits      : how many consecutive matches before we show the track (avoids ghost tracks)
+        #iou_threshold : minimum IoU to accept a detection→track assignment
+        
         self.tracks = []           # list of active KalmanTrack objects
         self.max_age = max_age
         self.min_hits = min_hits
         self.iou_threshold = iou_threshold
 
-    # ── IoU helpers ─────────────────────────────
-
+#IoU = Area of Overlap / Area of Union
     def _iou(self, boxA, boxB):
-        """
-        Compute IoU between two boxes in (x1,y1,x2,y2) format.
 
-        Intersection area / Union area.
-        Returns a float in [0, 1].
-        """
+        #computes basic IoU (Intersection over Union) between two bounding boxes
+
         xA = max(boxA[0], boxB[0])
         yA = max(boxA[1], boxB[1])
         xB = min(boxA[2], boxB[2])
@@ -152,10 +140,8 @@ class SORTTracker:
         return inter_area / max(union_area, 1e-6)
 
     def _build_cost_matrix(self, predicted_boxes, detection_boxes):
-        """
-        Build an N×M cost matrix where cost[i][j] = 1 - IoU(track_i, detection_j).
-        Hungarian minimizes cost, so low cost = high overlap = good match.
-        """
+        # Builds an assignment cost matrix for the Hungarian algorithm based on IoU.
+        # Cost = 1 - IoU, so higher IoU = lower cost.
         n = len(predicted_boxes)
         m = len(detection_boxes)
         cost = np.zeros((n, m), dtype=float)
@@ -164,35 +150,29 @@ class SORTTracker:
                 cost[i, j] = 1.0 - self._iou(pb, db)
         return cost
 
-    # ── main update ─────────────────────────────
 
     def update(self, detections):
-        """
-        detections: list of (x1, y1, x2, y2) bounding boxes from the detector.
 
-        Returns: dict of { track_id: (cx, cy) }
-                 — same interface as the old ObjectTracker so main.py stays clean.
-        """
-        # ── 1. Predict new positions for every existing track ──
+        #1. Predict new positions for every existing track 
         predicted_boxes = []
         for track in self.tracks:
             predicted_boxes.append(track.predict())
 
-        # ── 2. Match predictions → detections via Hungarian algorithm ──
+        #2. Match predictions → detections via Hungarian algorithm
         matched, unmatched_dets = self._match(predicted_boxes, detections)
 
-        # ── 3. Update matched tracks with their detection ──
+        #3. Update matched tracks with their detection 
         for track_idx, det_idx in matched:
             self.tracks[track_idx].update(detections[det_idx])
 
-        # ── 4. Create new tracks for unmatched detections ──
+        #4. Create new tracks for unmatched detections
         for det_idx in unmatched_dets:
             self.tracks.append(KalmanTrack(detections[det_idx]))
 
-        # ── 5. Kill tracks that haven't been matched for too long ──
+        #5. Kill tracks that haven't been matched for too long 
         self.tracks = [t for t in self.tracks if t.no_match_streak <= self.max_age]
 
-        # ── 6. Return confirmed tracks as { id: (cx, cy) } ──
+        #6. Return confirmed tracks as { id: (cx, cy) } 
         result = {}
         for track in self.tracks:
             # Only report tracks that have been confirmed (min_hits matched frames)
@@ -205,19 +185,12 @@ class SORTTracker:
         return result
 
     def _match(self, predicted_boxes, detection_boxes):
-        """
-        Run the Hungarian algorithm and filter out low-IoU assignments.
-
-        Returns:
-            matched       : list of (track_idx, det_idx) pairs
-            unmatched_dets: list of det indices that got no track
-        """
         if len(self.tracks) == 0 or len(detection_boxes) == 0:
             return [], list(range(len(detection_boxes)))
 
         cost_matrix = self._build_cost_matrix(predicted_boxes, detection_boxes)
 
-        # linear_sum_assignment solves the assignment problem in O(n³)
+        # linear_sum_assignment solves the assignment problem in O(n3)
         # It returns the row and column indices of the optimal assignment
         row_ind, col_ind = linear_sum_assignment(cost_matrix)
 

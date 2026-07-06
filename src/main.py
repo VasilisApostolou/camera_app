@@ -27,7 +27,7 @@ def main():
         min_hits=2, #Trust object ID until it has been seen for 2 frames                          
         iou_threshold=0.25  #Minimum IoU for matching detections to existing tracks                   
     )
-
+    
     processing_modes = {
         "normal"    : lambda f: f,
         "grayscale" : apply_grayscale,
