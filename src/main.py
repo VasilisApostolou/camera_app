@@ -11,6 +11,7 @@ from src.processors import (apply_grayscale, apply_blur_filter,
                              create_color_histogram)
 from src.tracker import SORTTracker          
 from src.yolo_detector import YoloDetector
+from src.alert_system import AlertSystem
 
 def main():
     #open the cam with resolution 1600x900
@@ -64,6 +65,9 @@ def main():
     win_x = (screen_width  - window_width)  // 2
     win_y = (screen_height - window_height) // 2
 
+    #start alert system
+    alerts = AlertSystem(cooldown=5.0, sound_file="alert.wav")
+
     try:
         while True:
             ret, frame = cam.get_frame()
@@ -93,7 +97,11 @@ def main():
                 #1. AI finds objects in the current frame.
                 raw_detections = yolo.detect(frame)
 
+                alerts.process_detections(raw_detections)
+                
                 bbox_list = [d["bbox"] for d in raw_detections]
+
+                
 
                 #2. Update the tracker . It looks at the new boxes and tries
                 #   to match them to existing tracks, and assigns IDs.
