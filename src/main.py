@@ -4,7 +4,7 @@
 import cv2
 import numpy as np
 #helper functions and classes
-from src.camera import open_camera, get_frame, release_camera
+from src.camera import ThreadedCamera
 from src.utils import show_frame, get_key_pressed, get_screen_resolution
 from src.processors import (apply_grayscale, apply_blur_filter,
                              detect_color, detect_shapes,
@@ -14,7 +14,7 @@ from src.yolo_detector import YoloDetector
 
 def main():
     #open the cam with resolution 1600x900
-    cap = open_camera(0, 1600, 900)
+    cam = ThreadedCamera(0,1600,900).start()
     
     current_mode = "normal" #default mode
     histogram_window_open = False
@@ -53,8 +53,8 @@ def main():
     cv2.namedWindow(window_title, cv2.WINDOW_NORMAL)
 
     #find out how big is the camera feed
-    cam_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    cam_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cam_w = int(cam.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    cam_h = int(cam.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     #scale window to 95% of screen height and center
     screen_width, screen_height = get_screen_resolution()
@@ -66,7 +66,7 @@ def main():
 
     try:
         while True:
-            ret, frame = get_frame(cap)
+            ret, frame = cam.get_frame()
             if not ret:
                 print("Failed to grab frame")
                 break
@@ -201,7 +201,7 @@ def main():
 
     finally:
         #cleanup
-        release_camera(cap)
+        cam.stop
 
 if __name__ == "__main__":
     main()

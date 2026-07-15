@@ -1,21 +1,49 @@
 #All functions for handling the camera
 
-
 #import libraries 
 import cv2
+from threading import Thread, Lock
 
-def open_camera(camera_index=0, width=640, height=480): #camera_index=0 : default camera
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
-    if not cap.isOpened():
-        raise Exception("Error: Could not open camera")
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    return cap
+class ThreadedCamera:
+    def __init__(self, camera_index=0, width=1600,height=900):
+        self.cap = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
-def get_frame(cap):
-    ret, frame = cap.read()
-    return ret, frame
+        self.ret, self.frame = self.cap.read() #grab first frame
 
-def release_camera(cap):
-    cap.release()
-    cv2.destroyAllWindows()
+        #thread control flags
+        self.started = False
+        self.read_lock = Lock() #Prevents main loop and thread from modifying the frame at the same time
+
+    def start(self):
+        if self.started:
+            return self
+        self.started = True
+        #create background thread that runs the "update" method
+        self.thread = Thread(target=self.update, args=())
+        self.thread.daemon = True #thread closes automatically when main program closes
+        self.thread.start()
+        return self
+    
+    def update(self):
+        #keep grabbing frames while looping in the background
+        while self.started:
+            ret,frame = self.cap.read()
+            with self.read_lock:
+                self.ret = ret
+                if ret:
+                    self.frame = frame
+    
+    def get_frame(self):
+        #read the frame to pass to main.py
+        with self.read_lock:
+            return self.ret, self.frame.copy()
+    
+    def stop(self):
+        self.started = False
+        if self.thread.is_alive():
+            self.thread.join()
+        self.cap.release()
+
+    
